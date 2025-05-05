@@ -1,0 +1,37 @@
+$PatToken="<Pat_Token>"
+$Header = @{Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$($PatToken)"))}
+
+$data = @()
+$projectList = Invoke-RestMethod -Uri "https://dev.azure.com/TEST/_apis/projects?api-version=6.0" -Method Get -Headers $Header
+
+$projectList.value | ForEach-Object {
+    $project = $_.name
+    $Groups = Invoke-RestMethod -Uri "https://dev.azure.com/TEST/$project/_apis/distributedtask/variablegroups?api-version=7.1" -Method Get -Headers $Header
+    $Groups.value | ForEach-Object {
+        $GroupID = $_.id
+        $GroupName=$_.name
+        
+        $GroupDetails = Invoke-RestMethod -Uri "https://dev.azure.com/TEST/$project/_apis/distributedtask/variablegroups/${GroupID}?api-version=7.1" -Method Get -Headers $Header         
+        
+        $GroupDetails.variableGroupProjectReferences
+        
+        $GroupName=$GroupDetails.name
+        
+        $variables=$GroupDetails.Variables.PSObject.Properties
+        $GroupURL = "https://dev.azure.com/TEST/$project/_library?itemType=VariableGroups&view=VariableGroupView&variableGroupId=${GroupID}"
+        foreach($variable in $variables){
+            $name=$variable.name
+            $value=$variable.VaLue.value
+            $data += [PSCustomObject]@{
+                'ProjectName' = $project
+                'VariableGroupName' = $GroupName
+                'VariableGroupURL' = $GroupURL
+                'Variable Name' = $name
+                'Variable Value' = $value
+            }
+                        
+        }
+                
+    }
+}
+ $data | Export-Csv -Path "all_library_group_variables.csv" -NoTypeInformation
