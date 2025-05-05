@@ -1,0 +1,67 @@
+$PatToken=""
+$Header = @{Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$($PatToken)"))}
+
+
+Import-Module ImportExcel
+$excelFile = "C:\test\variable_groups.xlsx"
+$excelData = Import-Excel -Path $excelFile
+
+$organization = "test" 
+$projectName = "test"
+
+$variableGroupName = Read-Host -Prompt "Enter the name of the Variable Group"
+
+$projectList = Invoke-RestMethod -Uri "https://dev.azure.com/$organization/_apis/projects?api-version=6.0" -Method Get -Headers $Header
+
+
+$projectId = ($projectList.value | Where-Object { $_.name -eq $projectName }).id
+if (-not $projectId) {
+    Write-Host "Project '$projectName' not found!" -ForegroundColor Red
+    exit
+}
+
+$variables = @{}
+foreach ($row in $excelData) {
+    $isSecret = $false
+    if ($row.PSObject.Properties["IsSecret"]) {
+        if ($row.IsSecret -eq $true -or $row.IsSecret -eq "true") {
+            $isSecret = $true
+        }
+    }
+
+    # Add each variable to the variables dictionary
+    $variables[$row.VariableName] = @{
+        value = $row.variableValue
+        isSecret = $isSecret
+    }
+}
+
+# Prepare the body for the request
+$body = @"
+{
+  "variables": $($variables | ConvertTo-Json -Depth 10),
+  "variableGroupProjectReferences": [
+    {
+      "name": "$variableGroupName",
+      "projectReference": {
+        "id": "$projectID",
+        "name": "$projectName"
+      }
+    }
+  ],
+  "name": "$variableGroupName",
+  "description": ""
+}
+"@
+
+Write-Host $body
+
+$uri = "https://dev.azure.com/$organization/_apis/distributedtask/variablegroups?api-version=7.0"
+
+# Send the request
+try {
+    $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $Header -Body $body -ContentType "application/json"
+    Write-Host "Variable group '$variableGroupName' created successfully!" -ForegroundColor Green
+} catch {
+    $_
+}
