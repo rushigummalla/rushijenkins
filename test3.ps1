@@ -27,8 +27,9 @@ function Convert-MarkdownToHtml {
 
 function Extract-Images {
     param ($markdown)
-    $pattern = "!\[.*?\]\((.*?)\)"
-    return [regex]::Matches($markdown, $pattern) | ForEach-Object { $_.Groups[1].Value }
+    $pattern = '!\[.*?\]\((.*?)\)'
+    $matches = Select-String -InputObject $markdown -Pattern $pattern -AllMatches
+    return $matches.Matches | ForEach-Object { $_.Groups[1].Value }
 }
 
 function Download-Image {
@@ -54,7 +55,8 @@ $index = @()
 foreach ($page in $pages) {
     $pagePath = $page.path.TrimStart("/")
     $pageName = $pagePath.Split("/")[-1]
-    $localMdPath = Join-Path $exportDir ($pagePath + ".md" -replace "/", "\")
+    $normalizedPath = $pagePath -replace "/", "\"
+    $localMdPath = Join-Path $exportDir "$normalizedPath.md"
     $localHtmlPath = $localMdPath -replace "\.md$", ".html"
 
     Write-Host "Downloading: $pagePath"
@@ -80,14 +82,21 @@ foreach ($page in $pages) {
     # Step 2d: Convert to HTML
     Convert-MarkdownToHtml -mdFile $localMdPath | Out-Null
 
-    # Step 2e: Track in index
-    $index += @{
-        path = $pagePath
-        name = $pageName
-        markdown = $localMdPath
-        html = $localHtmlPath
-        images = $imageUrls
-        parentPath = ($pagePath -contains "/") ? ($pagePath -replace "/[^/]+$", "") : ""
+    # Step 2e: Determine parent path
+    if ($pagePath -like "*/*") {
+        $parent = $pagePath -replace "/[^/]+$", ""
+    } else {
+        $parent = ""
+    }
+
+    # Step 2f: Track in index
+    $index += [PSCustomObject]@{
+        path       = $pagePath
+        name       = $pageName
+        markdown   = $localMdPath
+        html       = $localHtmlPath
+        images     = $imageUrls
+        parentPath = $parent
     }
 }
 
@@ -95,4 +104,4 @@ foreach ($page in $pages) {
 $indexPath = Join-Path $exportDir "index.json"
 $index | ConvertTo-Json -Depth 10 | Set-Content -Path $indexPath
 
-Write-Host "`n✅ Export complete!"
+Write-Host "`n✅ Export complete! All pages saved in: $exportDir"
